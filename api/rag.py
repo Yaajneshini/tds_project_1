@@ -30,8 +30,8 @@ HEADERS = {
 }
 
 # --- File Paths for FAISS Index and Metadata ---
-INDEX_FILE = "faiss_index/index.faiss"
-METADATA_FILE = "faiss_index/metadatas.json"
+INDEX_FILE = "api/faiss_index/index.faiss"
+METADATA_FILE = "api/faiss_index/metadatas.json"
 
 # --- Core RAG Functions ---
 
