@@ -8,7 +8,7 @@ providers = ["python"]
 nixPkgs = ["python311Full"]
 
 [build.nixpacksPlan.phases.install]
-cmds = ["python3 -m pip install -r api/requirements.txt"]
+cmds = ["python3 -m ensurepip", "python3 -m pip install -r api/requirements.txt"]
 
 [start]
 cmd = "gunicorn app:app --chdir api --bind 0.0.0.0:$PORT"
