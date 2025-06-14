@@ -14,6 +14,10 @@ from rag import (
 
 app = Flask(__name__)
 
+@app.route('/') # Add this route
+def root_check():
+    return 'Root OK', 200
+
 @app.route('/healthz')
 def health_check():
     return 'OK', 200
