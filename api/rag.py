@@ -30,8 +30,9 @@ HEADERS = {
 }
 
 # --- File Paths for FAISS Index and Metadata ---
-INDEX_FILE = "api/faiss_index/index.faiss"
-METADATA_FILE = "api/faiss_index/metadatas.json"
+BASE_DIR = os.path.dirname(__file__)
+INDEX_FILE = os.path.join(BASE_DIR, "faiss_index", "index.faiss")
+METADATA_FILE = os.path.join(BASE_DIR, "faiss_index", "metadatas.json")
 
 # --- Core RAG Functions ---
 
