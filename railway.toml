@@ -1,0 +1,14 @@
+[build]
+builder = "NIXPACKS"
+
+[build.nixpacksPlan]
+providers = ["python"]
+
+[build.nixpacksPlan.phases.setup]
+nixPkgs = ["python311Full", "pip"]
+
+[build.nixpacksPlan.phases.install]
+cmds = ["pip install -r api/requirements.txt"]
+
+[start]
+cmd = "gunicorn app:app --chdir api --bind 0.0.0.0:$PORT"
