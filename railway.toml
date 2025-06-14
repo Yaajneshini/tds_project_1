@@ -5,7 +5,7 @@ builder = "NIXPACKS"
 providers = ["python"]
 
 [build.nixpacksPlan.phases.setup]
-nixPkgs = ["python311Full", "pip"]
+nixPkgs = ["python311"]  # ✅ includes pip automatically
 
 [build.nixpacksPlan.phases.install]
 cmds = ["pip install -r api/requirements.txt"]
