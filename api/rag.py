@@ -10,6 +10,7 @@ import mimetypes
 import sys
 import hashlib
 from dotenv import load_dotenv
+import gzip
 
 load_dotenv()
 
@@ -36,15 +37,20 @@ METADATA_FILE = "faiss_index/metadatas.json"
 
 def load_index_and_metadata():
     """
-    Loads the FAISS index and metadata from disk.
+    Loads FAISS index and GZIP compressed metadata (renamed to metadatas.json).
     """
-    if not os.path.exists(INDEX_FILE) or not os.path.exists(METADATA_FILE):
-        raise FileNotFoundError(f"Index file '{INDEX_FILE}' or metadata file '{METADATA_FILE}' missing. Please ensure these files are in the 'faiss_index' directory.")
+    if not os.path.exists(INDEX_FILE):
+        raise FileNotFoundError(f"Index file '{INDEX_FILE}' missing.")
     
     index = faiss.read_index(INDEX_FILE)
-    with open(METADATA_FILE, "r", encoding="utf-8") as f:
-        metadata = json.load(f)
-        
+
+    if os.path.exists(METADATA_FILE):
+        print("🔹 Loading compressed metadatas.json (gzip)")
+        with gzip.open(METADATA_FILE, "rt", encoding="utf-8") as f:
+            metadata = json.load(f)
+    else:
+        raise FileNotFoundError("Metadata file 'metadatas.json' not found.")
+
     return index, metadata
 
 def get_embedding(text):
