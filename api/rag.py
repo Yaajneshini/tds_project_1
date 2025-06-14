@@ -1,5 +1,3 @@
-# rag.py
-
 import os
 import json
 import requests
@@ -8,51 +6,63 @@ import numpy as np
 import base64
 import mimetypes
 import sys
-import hashlib
-from dotenv import load_dotenv
 import gzip
+from dotenv import load_dotenv
 
 load_dotenv()
 
-# --- Configuration for API Endpoints and Models ---
+# --- API Config ---
 AI_PROXY_BASE = os.getenv("AI_PROXY_BASE", "https://aipipe.org/openai/v1")
 EMBED_ENDPOINT = f"{AI_PROXY_BASE}/embeddings"
 CHAT_ENDPOINT = f"{AI_PROXY_BASE}/chat/completions"
 EMBED_MODEL = os.getenv("EMBED_MODEL", "text-embedding-3-small")
 CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-4o-mini")
-
 API_KEY = os.getenv("AI_PROXY_API_KEY")
 if not API_KEY:
-    raise ValueError("AI_PROXY_API_KEY environment variable not set. Please ensure your .env file is configured correctly with your AIPIPE Token.")
+    raise ValueError("AI_PROXY_API_KEY missing")
 
-HEADERS = {
-    "Authorization": f"Bearer {API_KEY}"
-}
+HEADERS = {"Authorization": f"Bearer {API_KEY}"}
 
-# --- File Paths for FAISS Index and Metadata ---
+# --- File Paths ---
 BASE_DIR = os.path.dirname(__file__)
 INDEX_FILE = os.path.join(BASE_DIR, "faiss_index", "index.faiss")
-METADATA_FILE = os.path.join(BASE_DIR, "faiss_index", "metadatas.json")
+METADATA_FILE = os.path.join(BASE_DIR, "faiss_index", "metadatas.json.gz")
+GDRIVE_FILE_ID = os.getenv("GDRIVE_METADATA_ID")
 
-# --- Core RAG Functions ---
+# --- Global Lazy Variables ---
+_lazy_index = None
+_lazy_metadata = None
+
+def download_metadata_from_gdrive():
+    if not GDRIVE_FILE_ID:
+        raise ValueError("GDRIVE_METADATA_ID not set in environment")
+    url = f"https://drive.google.com/uc?id={GDRIVE_FILE_ID}"
+    os.makedirs(os.path.dirname(METADATA_FILE), exist_ok=True)
+    print("⬇️ Downloading metadata from Google Drive...")
+    r = requests.get(url, stream=True)
+    r.raise_for_status()
+    with open(METADATA_FILE, "wb") as f:
+        for chunk in r.iter_content(8192):
+            f.write(chunk)
+    print("✅ Download complete.")
 
 def load_index_and_metadata():
-    """
-    Loads FAISS index and GZIP compressed metadata (renamed to metadatas.json).
-    """
+    global _lazy_index, _lazy_metadata
+    if _lazy_index and _lazy_metadata:
+        return _lazy_index, _lazy_metadata
+
     if not os.path.exists(INDEX_FILE):
-        raise FileNotFoundError(f"Index file '{INDEX_FILE}' missing.")
+        raise FileNotFoundError(f"{INDEX_FILE} missing")
     
-    index = faiss.read_index(INDEX_FILE)
+    if not os.path.exists(METADATA_FILE):
+        download_metadata_from_gdrive()
 
-    if os.path.exists(METADATA_FILE):
-        print("🔹 Loading compressed metadatas.json (gzip)")
-        with gzip.open(METADATA_FILE, "rt", encoding="utf-8") as f:
-            metadata = json.load(f)
-    else:
-        raise FileNotFoundError("Metadata file 'metadatas.json' not found.")
+    print("🔹 Loading FAISS index and metadata")
+    _lazy_index = faiss.read_index(INDEX_FILE)
+    with gzip.open(METADATA_FILE, "rt", encoding="utf-8") as f:
+        _lazy_metadata = json.load(f)
+    return _lazy_index, _lazy_metadata
 
-    return index, metadata
 
 def get_embedding(text):
     """
