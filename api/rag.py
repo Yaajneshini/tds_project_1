@@ -6,7 +6,7 @@ import numpy as np
 import base64
 import mimetypes
 import sys
-import gzip
+import gzip # Import gzip for loading the downloaded .gz file
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -26,25 +26,48 @@ HEADERS = {"Authorization": f"Bearer {API_KEY}"}
 # --- File Paths ---
 BASE_DIR = os.path.dirname(__file__)
 INDEX_FILE = os.path.join(BASE_DIR, "faiss_index", "index.faiss")
-METADATA_FILE = os.path.join(BASE_DIR, "faiss_index", "metadatas.json.gz")
+METADATA_FILE = os.path.join(BASE_DIR, "faiss_index", "metadatas.json.gz") # This file will be downloaded
+
+# --- Google Drive Config ---
+# Ensure GDRIVE_METADATA_ID is set in Render Environment Variables
 GDRIVE_FILE_ID = os.getenv("GDRIVE_METADATA_ID")
+if not GDRIVE_FILE_ID:
+    print("WARNING: GDRIVE_METADATA_ID environment variable not set. Metadata will not be downloaded.", file=sys.stderr)
+
 
 # --- Global Lazy Variables ---
 _lazy_index = None
 _lazy_metadata = None
 
+
 def download_metadata_from_gdrive():
+    """
+    Downloads the metadata.json.gz file from Google Drive.
+    """
     if not GDRIVE_FILE_ID:
-        raise ValueError("GDRIVE_METADATA_ID not set in environment")
-    url = f"https://drive.google.com/uc?id={GDRIVE_FILE_ID}"
-    os.makedirs(os.path.dirname(METADATA_FILE), exist_ok=True)
-    print("⬇️ Downloading metadata from Google Drive...")
-    r = requests.get(url, stream=True)
-    r.raise_for_status()
-    with open(METADATA_FILE, "wb") as f:
-        for chunk in r.iter_content(8192):
-            f.write(chunk)
-    print("✅ Download complete.")
+        print("Error: GDRIVE_METADATA_ID is not set. Cannot download metadata.", file=sys.stderr)
+        return False
+
+    print(f"🔹 Downloading metadata from Google Drive (ID: {GDRIVE_FILE_ID})...")
+    url = f"https://docs.google.com/uc?export=download&id={GDRIVE_FILE_ID}"
+    
+    try:
+        response = requests.get(url, stream=True, timeout=300) # Increased timeout
+        response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
+
+        os.makedirs(os.path.dirname(METADATA_FILE), exist_ok=True)
+        with open(METADATA_FILE, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        print("✅ Download complete.")
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"Error downloading metadata from Google Drive: {e}", file=sys.stderr)
+        return False
+    except Exception as e:
+        print(f"An unexpected error occurred during Google Drive download: {e}", file=sys.stderr)
+        return False
+
 
 def load_index_and_metadata():
     global _lazy_index, _lazy_metadata
@@ -52,10 +75,12 @@ def load_index_and_metadata():
         return _lazy_index, _lazy_metadata
 
     if not os.path.exists(INDEX_FILE):
-        raise FileNotFoundError(f"{INDEX_FILE} missing")
+        raise FileNotFoundError(f"{INDEX_FILE} missing. Ensure it is committed to Git.")
     
+    # Download metadata if it doesn't exist locally (for Render deployment)
     if not os.path.exists(METADATA_FILE):
-        download_metadata_from_gdrive()
+        if not download_metadata_from_gdrive():
+            raise FileNotFoundError(f"{METADATA_FILE} could not be downloaded or is missing.")
 
     print("🔹 Loading FAISS index and metadata")
     _lazy_index = faiss.read_index(INDEX_FILE)
@@ -146,21 +171,17 @@ def clean_content_for_prompt(content):
     content = ' '.join(content.split())
     return content
 
-def retrieve_and_prioritize_documents(question_embedding, index, metadata, top_k_initial=500, top_k_final=5): # Increased top_k_initial and top_k_final defaults
+def retrieve_and_prioritize_documents(question_embedding, index, metadata, top_k_initial=750, top_k_final=5):
     """
     Retrieves and prioritizes documents based on question embedding similarity.
-    Logs similarity scores for the top 5 final documents and checks for a specific critical URL.
+    Now directly uses FAISS distances for scoring as embeddings are no longer in metadata.
     """
     D, I = index.search(question_embedding.reshape(1, -1), top_k_initial)
     
     retrieved_docs_raw = []
     for i, dist in zip(I[0], D[0]):
-        doc = metadata[i]
-        doc_embedding = doc.get("embedding")
-        if doc_embedding is None:
-            continue
-        sim = cosine_sim(question_embedding, np.array(doc_embedding))
-        doc["score"] = sim
+        doc = metadata[int(i)] 
+        doc["score"] = -dist # <-- CORRECTED: Use negative FAISS distance as score
         retrieved_docs_raw.append(doc)
 
     retrieved_docs = []
@@ -180,33 +201,8 @@ def retrieve_and_prioritize_documents(question_embedding, index, metadata, top_k
         else:
             break
 
-    # --- Debugging: Check for specific critical URL in retrieved documents ---
-    #critical_doc_url = "https://tds.s-anand.net/#/project-tds-virtual-ta"
-    #found_critical_doc = False
-    #for doc in final_relevant_docs:
-        #if doc['url'] == critical_doc_url:
-            #found_critical_doc = True
-            #break
-    
-    #if found_critical_doc:
-        #print(f"\n--- DEBUG: Critical document '{critical_doc_url}' WAS FOUND in final_relevant_docs. ---", file=sys.stderr)
-    #else:
-        #print(f"\n--- DEBUG: CRITICAL DOCUMENT '{critical_doc_url}' WAS NOT FOUND in final_relevant_docs. This is likely the cause of incorrect answers. ---", file=sys.stderr)
-
-    # --- Logging for Top 5 Retrieved Documents (for debugging) ---
-    #print("\n--- Top 5 Retrieved Documents and their Similarity Scores ---", file=sys.stderr)
-    #for i, doc in enumerate(final_relevant_docs[:5]): # Log only top 5
-        #print(f"Doc {i+1}:", file=sys.stderr)
-        #print(f"  Score: {doc['score']:.4f}", file=sys.stderr)
-        #print(f"  URL: {doc['url']}", file=sys.stderr)
-        # Print a snippet of the content
-        #snippet = clean_content_for_prompt(doc.get("content", ""))
-        #print(f"  Content Snippet: {snippet[:200]}...", file=sys.stderr) # Limit snippet length
-        #print("-" * 30, file=sys.stderr)
-    #print("--- End of Top 5 Documents Log ---", file=sys.stderr)
-    # -----------------------------------------------------------
-
     return final_relevant_docs
+
 
 def build_prompt(question, relevant_docs, image_url=None):
     """
