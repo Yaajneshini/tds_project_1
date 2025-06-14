@@ -19,6 +19,10 @@ app = Flask(__name__)
 rag_index = None
 rag_metadata = None
 
+@app.route('/healthz')
+def health_check():
+    return 'OK', 200
+
 @app.route('/api/', methods=['POST'])
 def answer_question_api():
     """
@@ -105,13 +109,10 @@ def answer_question_api():
     
     return jsonify(answer_data), 200
 
-if __name__ == '__main__':
-    # Only essential startup message remains
-    try:
-        rag_index, rag_metadata = load_index_and_metadata()
-        print("RAG assets loaded successfully.")
-    except Exception as e:
-        print(f"FATAL ERROR: Failed to load RAG assets on startup: {e}", file=sys.stderr) # Keep fatal error
-        sys.exit(1)
-
-    app.run(host='0.0.0.0', port=5000, debug=True)
+# Load FAISS index and metadata at import time (works for Render too)
+try:
+    rag_index, rag_metadata = load_index_and_metadata()
+    print("RAG assets loaded successfully.")
+except Exception as e:
+    print(f"FATAL ERROR: Failed to load RAG assets on startup: {e}", file=sys.stderr)
+    sys.exit(1)
