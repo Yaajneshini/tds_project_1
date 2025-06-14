@@ -4,5 +4,5 @@ services:
     env: python
     region: oregon
     buildCommand: pip install -r api/requirements.txt
-    startCommand: cd api && python app.py
+    startCommand: cd api && gunicorn app:app
     plan: free
